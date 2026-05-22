@@ -84,11 +84,16 @@ public class JwtBearerTokenFilterConfiguration extends GlobalConfiguration {
         if (protectedResourceMetadata == null) {
             return null;
         }
+        String rootUrl = Jenkins.get().getRootUrl();
+        if (!isNonBlank(rootUrl)) {
+            return null;
+        }
+        rootUrl = trimTrailingSlash(rootUrl);
         String normalizedProtectedPath = normalizePath(protectedResourceMetadata.getPath());
         if ("/".equals(normalizedProtectedPath)) {
-            return "/";
+            return rootUrl + "/";
         }
-        return normalizedProtectedPath.substring(1);
+        return rootUrl + "/" + normalizedProtectedPath.substring(1);
     }
 
     public String getProtectedResourceMetadataUrl(ProtectedResourceMetadata protectedResourceMetadata) {
@@ -112,17 +117,28 @@ public class JwtBearerTokenFilterConfiguration extends GlobalConfiguration {
     }
 
     public ProtectedResourceMetadata findProtectedResource(String requestURI, String contextPath) {
+
+        LOG.info("Finding protected resource for request URI '{}' with context path '{}'", requestURI, contextPath);
+
         String normalizedRequestPath = normalizePath(requestURI);
+        LOG.info("Normalized request path '{}'", normalizedRequestPath);
         if (isNonBlank(contextPath) && normalizedRequestPath.startsWith(contextPath)) {
             normalizedRequestPath = normalizePath(normalizedRequestPath.substring(contextPath.length()));
         }
+        LOG.info("Normalized request path '{}'", normalizedRequestPath);
         String requestPath = normalizedRequestPath;
-        return getProtectedResources().stream()
+        ProtectedResourceMetadata metadata = getProtectedResources().stream()
                 .filter(this::isMetadataConfigured)
                 .filter(resourceMetadata ->
                         normalizePath(resourceMetadata.getPath()).equals(requestPath))
                 .findFirst()
                 .orElse(null);
+        if (metadata == null) {
+            LOG.info("No protected resource metadata found for request URI '{}'", requestURI);
+            return null;
+        }
+        LOG.info("Protected resource metadata found for request URI '{}'", requestURI);
+        return metadata;
     }
 
     public ProtectedResourceMetadata getProtectedResourceMetadataForWellKnownPath(String wellKnownPath) {

@@ -140,7 +140,7 @@ class JwtBearerTokenFilterConfigurationTest {
         assertEquals(
                 "https://jenkins.example.com/jenkins/.well-known/oauth-protected-resource/mcp",
                 config.getProtectedResourceMetadataUrl(protectedResource));
-        assertEquals("mcp", config.getEffectiveResource(protectedResource));
+        assertEquals("https://jenkins.example.com/jenkins/mcp", config.getEffectiveResource(protectedResource));
     }
 
     @Test

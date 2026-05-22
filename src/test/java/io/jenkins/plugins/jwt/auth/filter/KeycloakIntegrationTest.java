@@ -215,9 +215,10 @@ class KeycloakIntegrationTest {
 
         assertEquals(200, metadataResponse.statusCode(), "Metadata endpoint should return 200");
         assertFalse(metadata.containsKey("status"), "Metadata should be returned at top level without status wrapper");
+        String rootUrl = jenkinsRule.jenkins.getRootUrl();
         assertFalse(metadata.containsKey("data"), "Metadata should be returned at top level without data wrapper");
         assertEquals(
-                "whoAmI/api/json",
+                "%swhoAmI/api/json".formatted(rootUrl),
                 metadata.getString("resource"),
                 "Metadata should include protected path as resource");
         assertEquals(

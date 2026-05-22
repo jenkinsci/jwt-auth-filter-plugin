@@ -30,10 +30,12 @@ public class ProtectedResourceMetadataAction implements UnprotectedRootAction {
         return WELL_KNOWN_ROOT;
     }
 
+    @SuppressWarnings({"lgtm[jenkins/csrf]", "lgtm[jenkins/no-permission-check]", "unused"})
     public HttpResponse doIndex() {
         return HttpResponses.notFound();
     }
 
+    @SuppressWarnings({"lgtm[jenkins/csrf]", "lgtm[jenkins/no-permission-check]", "unused"})
     public HttpResponse doDynamic(StaplerRequest2 request) {
         return metadataResponseFor(extractProtectedResourcePath(request));
     }
