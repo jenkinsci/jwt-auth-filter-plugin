@@ -12,6 +12,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
+import hudson.model.User;
 import hudson.security.FullControlOnceLoggedInAuthorizationStrategy;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -24,10 +25,12 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jenkins.security.ApiTokenProperty;
 import net.sf.json.JSONObject;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -302,6 +305,37 @@ class KeycloakIntegrationTest {
         assertEquals("invalid_token", body.getString("error"), "Error code should be invalid_token");
     }
 
+    @Test
+    void shouldNotAddChallengeOnProtectedEndpointWhenBasicAuthWithApiTokenIsProvided(JenkinsRule jenkinsRule)
+            throws Exception {
+        configureJenkinsWithProtectedResourceMetadata(jenkinsRule, "/whoAmI/api/json", "/whoAmI/api/json");
+
+        String apiToken =
+                User.getById("alice", true).getProperty(ApiTokenProperty.class).generateNewToken("test").plainValue;
+        HttpResponse<String> response = sendRequestWithAuthorization(
+                jenkinsRule.getURL() + "whoAmI/api/json", basicAuthorization("alice", apiToken));
+
+        assertEquals(200, response.statusCode(), "Protected endpoint should return 200 with valid API token");
+        assertFalse(
+                response.headers().firstValue("WWW-Authenticate").isPresent(),
+                "Basic authenticated protected endpoint should not include resource metadata challenge");
+        assertTrue(response.body().contains("\"name\":\"alice\""), "whoAmI response should contain API token user");
+    }
+
+    @Test
+    void shouldReturn401WithInvalidBasicAuthOnProtectedResource(JenkinsRule jenkinsRule) throws Exception {
+        configureJenkinsWithProtectedResourceMetadata(jenkinsRule, "/whoAmI/api/json", "/whoAmI/api/json");
+
+        User.getById("alice", true);
+        HttpResponse<String> response = sendRequestWithAuthorization(
+                jenkinsRule.getURL() + "whoAmI/api/json", basicAuthorization("alice", "not-a-valid-api-token"));
+
+        assertEquals(401, response.statusCode(), "Protected endpoint with invalid basic credentials should return 401");
+        assertFalse(
+                response.body().contains("\"name\":\"alice\""),
+                "Invalid basic credentials should not authenticate the user");
+    }
+
     /**
      * Configures Jenkins with a single issuer whose JWKS comes from the given Keycloak realm.
      */
@@ -395,13 +429,17 @@ class KeycloakIntegrationTest {
     }
 
     private HttpResponse<String> sendRequestWithResponse(String url, String bearerToken) throws Exception {
+        return sendRequestWithAuthorization(url, bearerToken != null ? "Bearer " + bearerToken : null);
+    }
+
+    private HttpResponse<String> sendRequestWithAuthorization(String url, String authorization) throws Exception {
         HttpClient httpClient = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
         HttpRequest.Builder requestBuilder =
                 HttpRequest.newBuilder().uri(URI.create(url)).GET();
-        if (bearerToken != null) {
-            requestBuilder.header("Authorization", "Bearer " + bearerToken);
+        if (authorization != null) {
+            requestBuilder.header("Authorization", authorization);
         }
         return httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
     }
@@ -440,6 +478,11 @@ class KeycloakIntegrationTest {
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).build(), claims);
         jwt.sign(new RSASSASigner(rsaKey));
         return jwt.serialize();
+    }
+
+    private static String basicAuthorization(String username, String password) {
+        return "Basic "
+                + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8));
     }
 
     private static String trimTrailingSlash(String url) {

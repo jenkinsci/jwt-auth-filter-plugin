@@ -37,7 +37,7 @@ Protected resources (RFC 9728) are optional and depends if you only validate JWT
 
 Adding a protected resource will
 
-Return 401 with `WWW-Authenticate: Bearer resource_metadata="<jenkins-root>/.well-known/oauth-protected-resource/<resource>"` for requests without a Bearer token to `/<resource>` endpoint.
+Return 401 with `WWW-Authenticate: Bearer resource_metadata="<jenkins-root>/.well-known/oauth-protected-resource/<resource>"` for unauthenticated requests to `/<resource>` endpoint. Requests already authenticated by Jenkins (for example HTTP basic authentication with username/api-token) are not challenged.
 
 Querying the `/.well-known/oauth-protected-resource/<resource>` endpoint will return the protected resource metadata with the configured authorization server and supported scopes.
 

@@ -8,6 +8,7 @@ import java.io.IOException;
 import jenkins.util.HttpServletFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -35,11 +36,11 @@ public class ProtectedResourceChallengeFilter implements HttpServletFilter {
 
         String authHeader = httpRequest.getHeader("Authorization");
         boolean hasBearerToken = authHeader != null && authHeader.startsWith(JwtBearerTokenFilter.BEARER_PREFIX);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
         if (hasBearerToken) {
             // JwtBearerTokenFilter (ordinal 200) already ran. If the token was valid it set a
             // JwtBearerTokenAuthentication in the security context — pass through in that case only.
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth instanceof JwtBearerTokenAuthentication && auth.isAuthenticated()) {
                 return false;
             }
@@ -47,6 +48,10 @@ public class ProtectedResourceChallengeFilter implements HttpServletFilter {
             LOG.debug(
                     "Bearer token on protected resource {} is invalid or expired — re-challenging",
                     httpRequest.getRequestURI());
+        } else if (auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken)) {
+            // Already authenticated by Jenkins (e.g. HTTP basic with username/API token or a session).
+            // Invalid basic credentials are rejected by Jenkins before reaching this filter.
+            return false;
         }
 
         String metadataUrl = config.getProtectedResourceMetadataUrl(protectedResource);
