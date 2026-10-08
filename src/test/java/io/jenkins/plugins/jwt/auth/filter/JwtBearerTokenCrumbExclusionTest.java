@@ -58,6 +58,25 @@ class JwtBearerTokenCrumbExclusionTest {
                 "The competing CrumbExclusion must not have handled the request; body was: " + response.body());
     }
 
+    @Test
+    void missingBearerTokenOnProtectedResourceIsChallengedBeforeCompetingCrumbExclusion(JenkinsRule jenkinsRule)
+            throws Exception {
+        configure(jenkinsRule);
+
+        HttpResponse<String> response = post(jenkinsRule.getURL() + "mcp-test/mcp", null);
+
+        assertEquals(
+                401,
+                response.statusCode(),
+                "A protected resource without a bearer token must be challenged, "
+                        + "not consumed by a competing CrumbExclusion.");
+        assertTrue(response.body().contains("\"error\":\"unauthorized\""), response.body());
+        assertFalse(response.body().contains(ConsumingCrumbExclusion.MARKER), response.body());
+        assertTrue(
+                response.headers().firstValue("WWW-Authenticate").orElse("").contains("oauth-protected-resource"),
+                "Challenge should advertise protected-resource metadata.");
+    }
+
     /**
      * Regression test for the double build trigger bug.
      *
@@ -71,11 +90,12 @@ class JwtBearerTokenCrumbExclusionTest {
     @Test
     void noBearerTokenMustNotDriveChain(JenkinsRule jenkinsRule) throws Exception {
         configure(jenkinsRule);
+        JwtBearerTokenFilterConfiguration.getInstance().setProtectedResources(List.of());
         String basePath = jenkinsRule.getURL().getPath().replaceAll("/$", "");
         String protectedUri = basePath + "/mcp-test/mcp";
 
         AtomicInteger chainCalls = new AtomicInteger(0);
-        HttpServletRequest request = fakeRequest(protectedUri, null);
+        HttpServletRequest request = fakeRequest(protectedUri, null, basePath);
         HttpServletResponse response = fakeResponse();
         FilterChain chain = (req, resp) -> chainCalls.incrementAndGet();
 
@@ -92,12 +112,30 @@ class JwtBearerTokenCrumbExclusionTest {
                         + "the UI request and triggers the build twice.");
     }
 
-    private static HttpServletRequest fakeRequest(String requestURI, String authHeader) {
+    @Test
+    void noBearerTokenOnProtectedResourceMustDriveChain(JenkinsRule jenkinsRule) throws Exception {
+        configure(jenkinsRule);
+        String basePath = jenkinsRule.getURL().getPath().replaceAll("/$", "");
+        String protectedUri = basePath + "/mcp-test/mcp";
+
+        AtomicInteger chainCalls = new AtomicInteger(0);
+        HttpServletRequest request = fakeRequest(protectedUri, null, basePath);
+        HttpServletResponse response = fakeResponse();
+        FilterChain chain = (req, resp) -> chainCalls.incrementAndGet();
+
+        boolean handled = new JwtBearerTokenCrumbExclusion().process(request, response, chain);
+
+        assertTrue(handled, "A protected resource without a bearer token must be handled for the OIDC challenge.");
+        assertEquals(1, chainCalls.get(), "The protected-resource request must be passed down the chain once.");
+    }
+
+    private static HttpServletRequest fakeRequest(String requestURI, String authHeader, String contextPath) {
         return (HttpServletRequest) Proxy.newProxyInstance(
                 JwtBearerTokenCrumbExclusionTest.class.getClassLoader(),
                 new Class<?>[] {HttpServletRequest.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "getRequestURI" -> requestURI;
+                    case "getContextPath" -> contextPath;
                     case "getHeader" -> "Authorization".equalsIgnoreCase((String) args[0]) ? authHeader : null;
                     default -> defaultValue(method.getReturnType());
                 });

@@ -42,10 +42,17 @@ public class JwtBearerTokenCrumbExclusion extends CrumbExclusion {
         }
 
         // No Bearer token: return false so CrumbFilter runs normal CSRF validation exactly once.
-        // Must NOT drive the chain here (double-processes UI requests -> double build) and must NOT
-        // return true (would bypass CSRF on all protected paths).
+        // Metadata-backed resources must continue through the chain to issue an OIDC challenge.
         String authHeader = httpRequest.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith(JwtBearerTokenFilter.BEARER_PREFIX)) {
+        boolean hasBearerToken = authHeader != null && authHeader.startsWith(JwtBearerTokenFilter.BEARER_PREFIX);
+        if (!hasBearerToken) {
+            if (config.isProtectedResource(requestURI, httpRequest.getContextPath())) {
+                LOG.trace(
+                        "Request URI '{}' is a protected resource without a bearer token; driving chain for OIDC challenge",
+                        requestURI);
+                chain.doFilter(httpRequest, httpResponse);
+                return true;
+            }
             return false;
         }
 
